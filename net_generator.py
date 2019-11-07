@@ -12,7 +12,7 @@ class Node:
 
     def __init__(self, node_id):
         self.node_id = node_id
-        self.amount_balance = 0
+        self.amount_channel_balance = 0
         self.neighbor_num = 0
         self.neighbors: List = []
         self.balances: List = []
@@ -42,7 +42,7 @@ class Channel:
         return abs(self.alice_balance - self.bob_balance) / self.amount_balance
 
     def amount_weight(self):
-        return self.amount_balance / self.alice_node_obj.amount_balance
+        return self.amount_balance / self.alice_node_obj.amount_channel_balance
 
 
 class MyGraph:
@@ -83,12 +83,12 @@ class MyGraph:
             bob_balance = random.randint(self.min_balance, self.max_balance)
             logging.info("%d --> %d : %d vs %d" % (alice, bob, alice_balance, bob_balance))
 
-            self.nodes_obj[alice].amount_balance += alice_balance + bob_balance
+            self.nodes_obj[alice].amount_channel_balance += alice_balance + bob_balance
             self.nodes_obj[alice].neighbor_num += 1
             self.nodes_obj[alice].neighbors.append(bob)
             self.nodes_obj[alice].balances.append(alice_balance)
 
-            self.nodes_obj[bob].amount_balance += alice_balance + bob_balance
+            self.nodes_obj[bob].amount_channel_balance += alice_balance + bob_balance
             self.nodes_obj[bob].neighbor_num += 1
             self.nodes_obj[bob].neighbors.append(alice)
             self.nodes_obj[bob].balances.append(bob_balance)

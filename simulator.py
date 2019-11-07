@@ -3,10 +3,9 @@ import networkx as nx
 from tx_generator import Transaction
 from routing import Routing
 import logging
-import matplotlib
-
-matplotlib.rcParams['backend'] = 'SVG'
 import matplotlib.pyplot as plt
+from statistics import Statistics
+from dump import *
 
 
 class Simulator:
@@ -20,7 +19,9 @@ class Simulator:
     min_balance = 0
     max_balance = 0
 
-    tx_count = 0
+    stats: Statistics
+
+    dumper: Dump
 
     def __init__(self, nodes, edges, minb, maxb, tx_num, tx_min, tx_max):
         assert nodes > 0 and edges > 0
@@ -33,6 +34,9 @@ class Simulator:
         self.tx = Transaction(nodes, tx_num, tx_min, tx_max)
         self.routing = Routing(proxy='weight')
         self.paths = {}
+        self.stats = Statistics()
+        self.dumper = Dump()
+        self.dumper.dump_files(self.graph, self.tx)
 
     def setup(self):
         pass
@@ -71,35 +75,58 @@ class Simulator:
         for (pair, channel) in self.graph.channels_obj.items():
             channel.calculate_weight()
 
+    def execute_transaction(self, t: Transaction.Tx, path) -> bool:
+        if path is None or path is []:
+            return False
+        if not self.verify_path(t, path):
+            return False
+        self.change_balance(t, path)
+        return True
+
+    def route(self, t: Transaction.Tx) -> bool:
+        path = self.routing.single_path(self.MST, t.source, t.destination, proxy='weight')
+        self.stats.routing_count += 1
+        self.paths[(t.source, t.destination)] = path
+        if self.execute_transaction(t, path):
+            self.stats.tx_success += 1
+            self.stats.one_time_routing_count += 1
+            return True
+        else:
+            return False
+
+    def reroute(self, t: Transaction.Tx) -> bool:
+        path = self.routing.single_path(self.graph.nx_graph, t.source, t.destination, proxy='weight')
+        self.stats.re_routing_count += 1
+        if self.execute_transaction(t, path):
+            self.stats.tx_success += 1
+            self.stats.re_routing_success += 1
+            logging.info("reroute success")
+            return True
+        else:
+            self.stats.tx_fail += 1
+            self.stats.re_routing_fail += 1
+            logging.warning("reroute failed!!!")
+            return False
+
     def run(self):
+        # self.dumper.dump_files(self.graph, self.tx)
         # logging.info(self.MST.edges.data('weight'))
         # self.test()
         for t in self.tx.tx_list:
-            self.tx_count += 1
-            # get path
-            if (t.source, t.destination) not in self.paths:
-                path = self.routing.single_path(self.MST, t.source, t.destination, proxy='weight')
-            else:
+            self.stats.tx_count += 1
+            if (t.source, t.destination) in self.paths:   # if exist available path
                 path = self.paths[(t.source, t.destination)]
-            # verify
-            logging.info("tx from %d to %d, total %d coin" % (t.source, t.destination, t.money))
-            logging.info("path: %s" % str(path))
-            if path is None or not self.verify_path(t, path):
-                logging.warning("path unavailable, start reroute in whole graph")
-                # TODO reroute algorithm
-                path = self.routing.single_path(self.graph.nx_graph, t.source, t.destination, proxy='weight')
-                if path is None or not self.verify_path(t, path):
-                    logging.warning("path unavailable again, transaction failed !!!!!")
-                continue
-            # backup
-            self.paths[(t.source, t.destination)] = path
-
-            # run
-            self.change_balance(t, path)
-            logging.info("finish %d tx" % self.tx_count)
-
-        # for (pair, channel) in self.graph.channels_obj.items():
-        #     print("pair : ", pair, ", balance : ", channel.alice_balance, " <--> ", channel.bob_balance)
+                if self.execute_transaction(t, path):  # valid path, no routing
+                    self.stats.no_routing_count += 1
+                    self.stats.tx_success += 1
+                else:  # not valid path, reroute
+                    if not self.route(t):
+                        self.reroute(t)
+            else:  # don't exist path now
+                if not self.route(t):
+                    self.reroute(t)
+            logging.info("finish %d tx" % self.stats.tx_count)
+        self.stats.show_stats()
 
     def test(self):
         print(self.routing.single_path(self.MST, 1, 2))
@@ -128,5 +155,5 @@ class Simulator:
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
-    sim = Simulator(10, 12, 200, 4000, 2000, 1, 100)
+    sim = Simulator(5, 7, 200, 4000, 2000, 1, 100)
     sim.run()
